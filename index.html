@@ -392,7 +392,23 @@ async function loadState(){
   state.meta = await getOrDefault('meta', {nombre:'Liga de Hockey', descripcion:'Fase regular todos contra todos, seguida de Copa de Oro y Copa de Plata.', logo:LOGO_LIGA_DEFAULT});
   if(state.meta.logo === undefined) state.meta.logo = null;
   state.teams = await getOrDefault('teams', defaultTeams());
+  // Firebase guarda arrays vacíos como null: normalizamos para que nunca truene el resto del código
+  state.teams = (state.teams||[]).map(t => ({
+    id: t.id,
+    nombre: t.nombre || ('Equipo'),
+    escudo: t.escudo || null,
+    jugadoras: Array.isArray(t.jugadoras) ? t.jugadoras : []
+  }));
   state.fixture = await getOrDefault('fixture', null);
+  if(Array.isArray(state.fixture)){
+    state.fixture = state.fixture.map(m => ({
+      ...m,
+      goles: {
+        home: Array.isArray(m.goles && m.goles.home) ? m.goles.home : [],
+        away: Array.isArray(m.goles && m.goles.away) ? m.goles.away : []
+      }
+    }));
+  }
   state.playoffs = await getOrDefault('playoffs', null);
 }
 
@@ -1216,15 +1232,25 @@ function renderPlayoffs(){
 
 /* ---------- MAIN RENDER ---------- */
 function render(){
-  buildRegistry();
-  renderHeader();
-  renderNav();
-  if(currentTab==='inicio') renderInicio();
-  else if(currentTab==='equipos') renderEquipos();
-  else if(currentTab==='calendario') renderCalendario();
-  else if(currentTab==='tabla') renderTabla();
-  else if(currentTab==='goleadoras') renderGoleadoras();
-  else if(currentTab==='playoffs') renderPlayoffs();
+  try{
+    buildRegistry();
+    renderHeader();
+    renderNav();
+    if(currentTab==='inicio') renderInicio();
+    else if(currentTab==='equipos') renderEquipos();
+    else if(currentTab==='calendario') renderCalendario();
+    else if(currentTab==='tabla') renderTabla();
+    else if(currentTab==='goleadoras') renderGoleadoras();
+    else if(currentTab==='playoffs') renderPlayoffs();
+  }catch(e){
+    console.error('Error en render():', e);
+    document.getElementById('app').innerHTML =
+      '<div class="warn-box">Ocurrió un error mostrando esta sección.<br><br>'
+      + '<b>Detalle técnico (mándale esto a Facundo/soporte):</b><br>'
+      + '<span class="mono" style="font-size:12px;">' + escapeHtml(e.message) + '</span><br><br>'
+      + '<span class="mono" style="font-size:11px; color:var(--text-dim);">' + escapeHtml(e.stack||'') + '</span>'
+      + '</div>';
+  }
 }
 
 /* ---------- INIT ---------- */
