@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Liga de Hockey</title>
+<link id="favicon" rel="icon" type="image/png" href="">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -489,12 +490,14 @@ function barajar(arr){
   return a;
 }
 const BLOQUE_HORARIO = {1:'20:00 – 20:45', 2:'20:45 – 21:30'};
-// Slots fijos por jornada: cancha1 y cancha2 tienen 2 partidos (uno en cada bloque), cancha3 tiene 1 (solo bloque 1)
-const SLOTS_JORNADA = [
-  {cancha:1, bloque:1}, {cancha:1, bloque:2},
-  {cancha:2, bloque:1}, {cancha:2, bloque:2},
-  {cancha:3, bloque:1}
+// Combinaciones disponibles de cancha+bloque, en orden de prioridad. Se usan tantas como partidos haya por jornada.
+const TODAS_LAS_COMBOS = [
+  {cancha:1, bloque:1}, {cancha:2, bloque:1}, {cancha:3, bloque:1},
+  {cancha:1, bloque:2}, {cancha:2, bloque:2}, {cancha:3, bloque:2}
 ];
+function slotsParaJornada(partidosPorJornada){
+  return TODAS_LAS_COMBOS.slice(0, partidosPorJornada);
+}
 
 function _generarUnaTanda(rounds, ids){
   const teamStats = {};
@@ -502,7 +505,7 @@ function _generarUnaTanda(rounds, ids){
   const tanda = [];
   rounds.forEach((matches, ri)=>{
     const poolMatches = matches.map(m=>({...m}));
-    const poolSlots = barajar(SLOTS_JORNADA).map(s=>({...s}));
+    const poolSlots = barajar(slotsParaJornada(matches.length)).map(s=>({...s}));
     const asignaciones = [];
     while(poolMatches.length){
       let mejor = null;
@@ -538,14 +541,17 @@ function _generarUnaTanda(rounds, ids){
 }
 
 function generarFixtureData(){
-  const ids = state.teams.map(t=>t.id);
+  const idsReales = state.teams.map(t=>t.id);
+  const ids = idsReales.length % 2 === 0 ? idsReales.slice() : [...idsReales, 'BYE'];
   const n = ids.length;
   let arr = ids.slice();
   const rounds=[];
   for(let r=0;r<n-1;r++){
     const roundMatches=[];
     for(let i=0;i<n/2;i++){
-      roundMatches.push({home:arr[i], away:arr[n-1-i]});
+      if(arr[i]!=='BYE' && arr[n-1-i]!=='BYE'){
+        roundMatches.push({home:arr[i], away:arr[n-1-i]});
+      }
     }
     const fixed=arr[0];
     const rest=arr.slice(1);
@@ -557,7 +563,7 @@ function generarFixtureData(){
   // Genera varios intentos con distinto orden aleatorio y se queda con el más parejo
   let mejorTanda = null, mejorVarianza = Infinity;
   for(let intento=0; intento<40; intento++){
-    const {tanda, varianza} = _generarUnaTanda(rounds, ids);
+    const {tanda, varianza} = _generarUnaTanda(rounds, idsReales);
     if(varianza < mejorVarianza){ mejorVarianza = varianza; mejorTanda = tanda; }
   }
 
@@ -663,6 +669,27 @@ function setDesempate(matchId, teamId){
   match.desempateGanador = teamId;
   save();
   render();
+}
+function agregarEquipo(){
+  if(!isEditor) return;
+  if(state.fixture){ showToast('No puedes agregar equipos: el calendario ya fue generado.'); return; }
+  if(state.teams.length>=16){ showToast('Máximo 16 equipos.'); return; }
+  let n=1;
+  const nombresUsados = new Set(state.teams.map(t=>t.nombre));
+  while(nombresUsados.has('Equipo '+n)) n++;
+  state.teams.push({id:'t'+Date.now()+Math.floor(Math.random()*1000), nombre:'Equipo '+n, escudo:null, jugadoras:[]});
+  saveKey('teams', state.teams);
+  render();
+}
+function quitarEquipo(teamId){
+  if(!isEditor) return;
+  if(state.fixture){ showToast('No puedes quitar equipos: el calendario ya fue generado.'); return; }
+  if(state.teams.length<=2){ showToast('Debe quedar al menos 2 equipos.'); return; }
+  askConfirm('¿Quitar este equipo? Se perderán sus datos (nombre, escudo, jugadoras cargadas).', ()=>{
+    state.teams = state.teams.filter(t=>t.id!==teamId);
+    saveKey('teams', state.teams);
+    render();
+  });
 }
 function actualizarNombreEquipo(teamId, value){
   if(!isEditor) return;
@@ -796,6 +823,7 @@ function _crearPlayoffsYGuardar(){
 function generarPlayoffsClick(){
   if(!isEditor) return;
   if(!state.fixture || state.fixture.length===0){ showToast('Primero genera el calendario de la fase regular.'); return; }
+  if(state.teams.length<8){ showToast('Necesitas al menos 8 equipos para generar Copa de Oro y Copa de Plata.'); return; }
   const total = state.fixture.length;
   const jugados = state.fixture.filter(m=>m.jugado).length;
   const seguirConPendientes = ()=>{
@@ -848,6 +876,9 @@ function salirModoEdicion(){
 /* ---------- RENDER: HEADER + NAV ---------- */
 function renderHeader(){
   const meta = state.meta || {nombre:'Liga de Hockey', descripcion:''};
+  document.title = meta.nombre || 'Liga de Hockey';
+  const faviconEl = document.getElementById('favicon');
+  if(faviconEl) faviconEl.href = meta.logo || LOGO_LIGA_DEFAULT;
   document.getElementById('header').innerHTML = `
     ${(meta.logo || isEditor) ? `
     <div class="logo-liga-header">
@@ -953,7 +984,21 @@ function renderInicio(){
 
 /* ---------- RENDER: EQUIPOS ---------- */
 function renderEquipos(){
-  let html = `<div class="team-grid">`;
+  let html = '';
+  if(isEditor){
+    if(!state.fixture){
+      html += `<div class="card" style="margin-bottom:16px;">
+        <h2>Cantidad de equipos</h2>
+        <p style="font-size:13px; color:var(--text-dim); margin-bottom:12px;">Ahora mismo hay <b>${state.teams.length}</b> equipos. Puedes agregar o quitar equipos libremente <b>mientras no hayas generado el calendario todavía</b>. Una vez generado el calendario, la cantidad de equipos queda fija.</p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn small" onclick="agregarEquipo()">+ Agregar equipo</button>
+        </div>
+      </div>`;
+    } else {
+      html += `<div class="warn-box" style="margin-bottom:16px;">El calendario ya fue generado, por lo que la cantidad de equipos (${state.teams.length}) quedó fija. Si necesitas cambiar la cantidad, primero borra el calendario generando uno nuevo desde la pestaña Calendario (esto borra los resultados cargados).</div>`;
+    }
+  }
+  html += `<div class="team-grid">`;
   state.teams.forEach(t=>{
     html += `
     <div class="card">
@@ -984,6 +1029,8 @@ function renderEquipos(){
         <input type="text" id="nueva-jugadora-${t.id}" placeholder="Nombre de la jugadora" onkeydown="if(event.key==='Enter')agregarJugadora('${t.id}')">
         <button class="btn small" onclick="agregarJugadora('${t.id}')">Añadir</button>
       </div>` : ''}
+      ${isEditor && !state.fixture ? `
+      <button class="btn ghost small" style="margin-top:10px; width:100%;" onclick="quitarEquipo('${t.id}')">Quitar este equipo</button>` : ''}
     </div>`;
   });
   html += `</div>`;
@@ -1081,11 +1128,21 @@ function renderGolesLado(match, side, team, canEdit){
 function renderCalendario(){
   let html = '';
   if(isEditor){
-    html += `<div class="card">
-      <h2>Calendario</h2>
-      <p style="font-size:13px; color:var(--text-dim); margin-bottom:12px;">10 equipos, fase regular a una vuelta: 9 jornadas de 5 partidos. Cada jornada se divide en Bloque 1 (${BLOQUE_HORARIO[1]}, 3 partidos, uno por cancha) y Bloque 2 (${BLOQUE_HORARIO[2]}, 2 partidos, en canchas 1 y 2). La cancha y el bloque de cada equipo se reparten lo más parejo posible durante toda la temporada.</p>
-      <button class="btn ${state.fixture?'ghost':''}" onclick="generarCalendario()">${state.fixture ? 'Generar de nuevo' : 'Generar calendario'}</button>
-    </div>`;
+    const n = state.teams.length;
+    const esImpar = n % 2 !== 0;
+    const jornadas = esImpar ? n : n-1;
+    const partidosPorJornada = esImpar ? (n-1)/2 : n/2;
+    if(partidosPorJornada>6){
+      html += `<div class="card"><h2>Calendario</h2>
+      <div class="warn-box">Con ${n} equipos habría ${partidosPorJornada} partidos por jornada, y solo hay 6 combinaciones de cancha+horario disponibles (3 canchas × 2 bloques). Reduce la cantidad de equipos a 12 o menos para poder generar el calendario.</div>
+      </div>`;
+    } else {
+      html += `<div class="card">
+        <h2>Calendario</h2>
+        <p style="font-size:13px; color:var(--text-dim); margin-bottom:12px;">${n} equipos, fase regular a una vuelta: ${jornadas} jornadas de ${partidosPorJornada} partidos${esImpar ? ' (cada jornada un equipo distinto descansa)' : ''}. Cada jornada se reparte entre Bloque 1 (${BLOQUE_HORARIO[1]}) y Bloque 2 (${BLOQUE_HORARIO[2]}), usando hasta 3 canchas. La cancha y el bloque de cada equipo se reparten lo más parejo posible durante toda la temporada.</p>
+        <button class="btn ${state.fixture?'ghost':''}" onclick="generarCalendario()">${state.fixture ? 'Generar de nuevo' : 'Generar calendario'}</button>
+      </div>`;
+    }
   }
   if(!state.fixture){
     html += `<p class="empty">Aún no hay calendario generado.</p>`;
