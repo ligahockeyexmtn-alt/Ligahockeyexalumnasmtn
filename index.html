@@ -815,6 +815,16 @@ function generarCalendario(){
     _crearFixtureYGuardar();
   }
 }
+function borrarCalendario(){
+  if(!isEditor) return;
+  askConfirm('¿Borrar el calendario actual? Se perderán todos los resultados y goles cargados. Vas a poder agregar/quitar equipos y generar un calendario nuevo después.', ()=>{
+    state.fixture = null;
+    saveKey('fixture', null);
+    state.playoffs = null;
+    saveKey('playoffs', null);
+    cambiarTab('equipos');
+  });
+}
 function _crearPlayoffsYGuardar(){
   state.playoffs = generarPlayoffsData();
   saveKey('playoffs', state.playoffs);
@@ -995,7 +1005,7 @@ function renderEquipos(){
         </div>
       </div>`;
     } else {
-      html += `<div class="warn-box" style="margin-bottom:16px;">El calendario ya fue generado, por lo que la cantidad de equipos (${state.teams.length}) quedó fija. Si necesitas cambiar la cantidad, primero borra el calendario generando uno nuevo desde la pestaña Calendario (esto borra los resultados cargados).</div>`;
+      html += `<div class="warn-box" style="margin-bottom:16px;">El calendario ya fue generado, por lo que la cantidad de equipos (${state.teams.length}) quedó fija. Si necesitas cambiar la cantidad, ve a la pestaña Calendario y usa el botón "Borrar calendario" (esto borra los resultados cargados).</div>`;
     }
   }
   html += `<div class="team-grid">`;
@@ -1140,7 +1150,10 @@ function renderCalendario(){
       html += `<div class="card">
         <h2>Calendario</h2>
         <p style="font-size:13px; color:var(--text-dim); margin-bottom:12px;">${n} equipos, fase regular a una vuelta: ${jornadas} jornadas de ${partidosPorJornada} partidos${esImpar ? ' (cada jornada un equipo distinto descansa)' : ''}. Cada jornada se reparte entre Bloque 1 (${BLOQUE_HORARIO[1]}) y Bloque 2 (${BLOQUE_HORARIO[2]}), usando hasta 3 canchas. La cancha y el bloque de cada equipo se reparten lo más parejo posible durante toda la temporada.</p>
-        <button class="btn ${state.fixture?'ghost':''}" onclick="generarCalendario()">${state.fixture ? 'Generar de nuevo' : 'Generar calendario'}</button>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn ${state.fixture?'ghost':''}" onclick="generarCalendario()">${state.fixture ? 'Generar de nuevo' : 'Generar calendario'}</button>
+          ${state.fixture ? `<button class="btn ghost" onclick="borrarCalendario()">Borrar calendario (para cambiar equipos)</button>` : ''}
+        </div>
       </div>`;
     }
   }
