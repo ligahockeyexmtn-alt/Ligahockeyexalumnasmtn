@@ -540,7 +540,17 @@ function _generarUnaTanda(rounds, ids){
 }
 
 function generarFixtureData(){
-  const idsReales = state.teams.map(t=>t.id);
+  const idsRealesOriginal = state.teams.map(t=>t.id);
+  // El equipo elegido para descansar en la fecha 1 (si existe) va primero; el resto queda en orden al azar.
+  const EQUIPO_LIBRE_FECHA1 = 'hernias club';
+  const equipoFijo = state.teams.find(t => (t.nombre||'').trim().toLowerCase() === EQUIPO_LIBRE_FECHA1);
+  let idsReales;
+  if(equipoFijo && idsRealesOriginal.length % 2 !== 0){
+    const resto = barajar(idsRealesOriginal.filter(id => id !== equipoFijo.id));
+    idsReales = [equipoFijo.id, ...resto];
+  } else {
+    idsReales = barajar(idsRealesOriginal);
+  }
   const ids = idsReales.length % 2 === 0 ? idsReales.slice() : [...idsReales, 'BYE'];
   const n = ids.length;
   let arr = ids.slice();
@@ -1161,8 +1171,12 @@ function renderCalendario(){
   }
   const jornadas = {};
   state.fixture.forEach(m=>{ (jornadas[m.jornada] = jornadas[m.jornada]||[]).push(m); });
+  const allTeamIds = state.teams.map(t=>t.id);
   Object.keys(jornadas).sort((a,b)=>a-b).forEach(j=>{
-    html += `<div class="jornada-title">Jornada ${j}</div>`;
+    const idsEnCancha = new Set();
+    jornadas[j].forEach(m=>{ idsEnCancha.add(m.homeId); idsEnCancha.add(m.awayId); });
+    const idLibre = allTeamIds.find(id => !idsEnCancha.has(id));
+    html += `<div class="jornada-title">Jornada ${j}${idLibre ? ` <span style="font-weight:400; font-size:13px; color:var(--text-dim);">· Libre: ${escapeHtml(teamName(idLibre))}</span>` : ''}</div>`;
     [1,2].forEach(bloque=>{
       const partidos = jornadas[j].filter(m=>m.bloque===bloque).sort((a,b)=>a.cancha-b.cancha);
       if(partidos.length===0) return;
