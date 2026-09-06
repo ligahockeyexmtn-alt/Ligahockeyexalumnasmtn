@@ -489,11 +489,10 @@ function barajar(arr){
   }
   return a;
 }
-const BLOQUE_HORARIO = {1:'20:00 – 20:45', 2:'20:45 – 21:30'};
-// Combinaciones disponibles de cancha+bloque, en orden de prioridad. Se usan tantas como partidos haya por jornada.
+const BLOQUE_HORARIO = {1:'20:30 – 21:30'};
+// Combinaciones disponibles de cancha+bloque: solo cancha 1 y 2, un único horario.
 const TODAS_LAS_COMBOS = [
-  {cancha:1, bloque:1}, {cancha:2, bloque:1}, {cancha:3, bloque:1},
-  {cancha:1, bloque:2}, {cancha:2, bloque:2}, {cancha:3, bloque:2}
+  {cancha:1, bloque:1}, {cancha:2, bloque:1}
 ];
 function slotsParaJornada(partidosPorJornada){
   return TODAS_LAS_COMBOS.slice(0, partidosPorJornada);
@@ -545,7 +544,7 @@ function generarFixtureData(){
   const ids = idsReales.length % 2 === 0 ? idsReales.slice() : [...idsReales, 'BYE'];
   const n = ids.length;
   let arr = ids.slice();
-  const rounds=[];
+  const roundsIda=[];
   for(let r=0;r<n-1;r++){
     const roundMatches=[];
     for(let i=0;i<n/2;i++){
@@ -557,8 +556,11 @@ function generarFixtureData(){
     const rest=arr.slice(1);
     rest.unshift(rest.pop());
     arr=[fixed,...rest];
-    rounds.push(roundMatches);
+    roundsIda.push(roundMatches);
   }
+  // Vuelta: mismos cruces, local y visita invertidos
+  const roundsVuelta = roundsIda.map(round => round.map(m=>({home:m.away, away:m.home})));
+  const rounds = [...roundsIda, ...roundsVuelta];
 
   // Genera varios intentos con distinto orden aleatorio y se queda con el más parejo
   let mejorTanda = null, mejorVarianza = Infinity;
@@ -585,18 +587,12 @@ function generarPlayoffsData(){
   const tabla = tablaOrdenada(allIds, state.fixture||[]);
   const ordered = tabla.map(r=>r.team.id);
   const goldIds = ordered.slice(0,4);
-  const silverIds = ordered.slice(4,8);
   return {
     generado:true,
     gold:{
       semi1: crearPartidoVacio(goldIds[0], goldIds[3], 'gold-semi1'),
       semi2: crearPartidoVacio(goldIds[1], goldIds[2], 'gold-semi2'),
       final: crearPartidoVacio(null, null, 'gold-final')
-    },
-    silver:{
-      semi1: crearPartidoVacio(silverIds[0], silverIds[3], 'silver-semi1'),
-      semi2: crearPartidoVacio(silverIds[1], silverIds[2], 'silver-semi2'),
-      final: crearPartidoVacio(null, null, 'silver-final')
     }
   };
 }
@@ -621,7 +617,7 @@ function buildRegistry(){
     MATCH_REGISTRY[m.id] = { match:m, save:()=>saveKey('fixture', state.fixture) };
   });
   if(state.playoffs){
-    ['gold','silver'].forEach(copaKey=>{
+    ['gold'].forEach(copaKey=>{
       const copa = state.playoffs[copaKey];
       actualizarFinal(copa);
       ['semi1','semi2','final'].forEach(k=>{
@@ -833,7 +829,7 @@ function _crearPlayoffsYGuardar(){
 function generarPlayoffsClick(){
   if(!isEditor) return;
   if(!state.fixture || state.fixture.length===0){ showToast('Primero genera el calendario de la fase regular.'); return; }
-  if(state.teams.length<8){ showToast('Necesitas al menos 8 equipos para generar Copa de Oro y Copa de Plata.'); return; }
+  if(state.teams.length<4){ showToast('Necesitas al menos 4 equipos para generar la Copa de Oro.'); return; }
   const total = state.fixture.length;
   const jugados = state.fixture.filter(m=>m.jugado).length;
   const seguirConPendientes = ()=>{
@@ -1140,16 +1136,17 @@ function renderCalendario(){
   if(isEditor){
     const n = state.teams.length;
     const esImpar = n % 2 !== 0;
-    const jornadas = esImpar ? n : n-1;
+    const jornadasIda = esImpar ? n : n-1;
+    const jornadas = jornadasIda * 2;
     const partidosPorJornada = esImpar ? (n-1)/2 : n/2;
-    if(partidosPorJornada>6){
+    if(partidosPorJornada>2){
       html += `<div class="card"><h2>Calendario</h2>
-      <div class="warn-box">Con ${n} equipos habría ${partidosPorJornada} partidos por jornada, y solo hay 6 combinaciones de cancha+horario disponibles (3 canchas × 2 bloques). Reduce la cantidad de equipos a 12 o menos para poder generar el calendario.</div>
+      <div class="warn-box">Con ${n} equipos habría ${partidosPorJornada} partidos por jornada, y solo hay 2 canchas disponibles. Reduce la cantidad de equipos a 5 (o 4) para poder generar el calendario.</div>
       </div>`;
     } else {
       html += `<div class="card">
         <h2>Calendario</h2>
-        <p style="font-size:13px; color:var(--text-dim); margin-bottom:12px;">${n} equipos, fase regular a una vuelta: ${jornadas} jornadas de ${partidosPorJornada} partidos${esImpar ? ' (cada jornada un equipo distinto descansa)' : ''}. Cada jornada se reparte entre Bloque 1 (${BLOQUE_HORARIO[1]}) y Bloque 2 (${BLOQUE_HORARIO[2]}), usando hasta 3 canchas. La cancha y el bloque de cada equipo se reparten lo más parejo posible durante toda la temporada.</p>
+        <p style="font-size:13px; color:var(--text-dim); margin-bottom:12px;">${n} equipos, fase regular todos contra todos ida y vuelta: ${jornadas} jornadas de ${partidosPorJornada} partido${partidosPorJornada===1?'':'s'}${esImpar ? ' (cada jornada un equipo distinto descansa)' : ''}. Horario único: ${BLOQUE_HORARIO[1]}, usando cancha 1 y cancha 2. La cancha de cada equipo se reparte lo más pareja posible durante toda la temporada.</p>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button class="btn ${state.fixture?'ghost':''}" onclick="generarCalendario()">${state.fixture ? 'Generar de nuevo' : 'Generar calendario'}</button>
           ${state.fixture ? `<button class="btn ghost" onclick="borrarCalendario()">Borrar calendario (para cambiar equipos)</button>` : ''}
@@ -1193,7 +1190,7 @@ function renderTabla(){
     </tr></thead><tbody>`;
   filas.forEach((f,i)=>{
     const pos=i+1;
-    const zonaClass = pos<=4 ? 'zona-oro' : (pos<=8 ? 'zona-plata' : '');
+    const zonaClass = pos<=4 ? 'zona-oro' : '';
     const dg = f.stats.gf - f.stats.gc;
     html += `<tr class="${zonaClass}">
       <td>${pos}</td>
@@ -1205,8 +1202,7 @@ function renderTabla(){
   });
   html += `</tbody></table></div>
   <div class="zona-leyenda">
-    <span><i style="background:var(--gold);"></i> 1° al 4° — Copa de Oro</span>
-    <span><i style="background:var(--silver);"></i> 5° al 8° — Copa de Plata</span>
+    <span><i style="background:var(--gold);"></i> 1° al 4° — Clasifican a Copa de Oro</span>
   </div>
   <p style="font-size:11.5px; color:var(--text-dim); margin-top:10px;">Criterios de desempate: 1) diferencia de gol, 2) resultado entre los equipos empatados.</p>
   </div>`;
@@ -1263,7 +1259,7 @@ function renderPlayoffs(){
   if(isEditor){
     html += `<div class="card">
       <h2>Playoffs</h2>
-      <p style="font-size:13px; color:var(--text-dim); margin-bottom:12px;">Se generan a partir de la tabla de posiciones: 1°–4° a Copa de Oro, 5°–8° a Copa de Plata. Cruces: 1°v4°, 2°v3° (y 5°v8°, 6°v7°).</p>
+      <p style="font-size:13px; color:var(--text-dim); margin-bottom:12px;">Se generan a partir de la tabla de posiciones: 1°–4° clasifican a la Copa de Oro. Cruces: 1° vs 4°, 2° vs 3°. El 5° lugar (y siguientes) no clasifica.</p>
       <button class="btn ${state.playoffs?'ghost':''}" onclick="generarPlayoffsClick()">${state.playoffs?'Generar de nuevo':'Generar playoffs'}</button>
     </div>`;
   }
@@ -1273,11 +1269,10 @@ function renderPlayoffs(){
     return;
   }
 
-  ['gold','silver'].forEach(copaKey=>{
+  ['gold'].forEach(copaKey=>{
     const copa = state.playoffs[copaKey];
-    const esOro = copaKey==='gold';
     html += `<div class="copa-block">
-      <div class="copa-title ${esOro?'oro':'plata'}"><span class="icon"></span><h2>Copa de ${esOro?'Oro':'Plata'}</h2></div>
+      <div class="copa-title oro"><span class="icon"></span><h2>Copa de Oro</h2></div>
       <div class="bracket-row">
         <div class="bracket-col">
           <div class="jornada-title" style="margin-top:0;">Semifinal 1</div>
@@ -1292,7 +1287,7 @@ function renderPlayoffs(){
       <div class="final-wrap">${renderMatchCard(copa.final.id, {label:'Final', pendienteLabel:'La final se habilita cuando ambas semifinales tengan resultado.'})}</div>
       ${copa.final.jugado ? (()=>{
         const w = resolverGanador(copa.final);
-        return w ? `<div class="champion-banner ${esOro?'oro':'plata'}">🏆 Campeón: ${escapeHtml(teamName(w))}</div>` : '';
+        return w ? `<div class="champion-banner oro">🏆 Campeón: ${escapeHtml(teamName(w))}</div>` : '';
       })() : ''}
     </div>`;
   });
